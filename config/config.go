@@ -4,86 +4,65 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
 
-
 type AuthConfig struct {
-    Key string
-    Email string
-    Token string
-}
-
-type DnsConfig struct {
-    ZoneId string
-    DNSRecordId string
+	Key   string
+	Email string
+	Token string
 }
 
 type Config struct {
-    Auth AuthConfig
-    DNS DnsConfig
+	Auth    AuthConfig
+	Domains []string
 }
-
 
 func missingEnv(envName string) string {
-    return fmt.Sprintf("Missing ENV variable: %s", envName)
+	return fmt.Sprintf("Missing ENV variable: %s", envName)
 }
-
 
 func getAuthConfig() AuthConfig {
-    key, found := os.LookupEnv("API_KEY")
-    if !found {
-        log.Fatalln(missingEnv("API_KEY"))
-    }
+	key, found := os.LookupEnv("API_KEY")
+	if !found {
+		log.Fatalln(missingEnv("API_KEY"))
+	}
 
-    email, found := os.LookupEnv("API_EMAIL")
-    if !found {
-        log.Fatalln(missingEnv("API_EMAIL"))
-    }
+	email, found := os.LookupEnv("API_EMAIL")
+	if !found {
+		log.Fatalln(missingEnv("API_EMAIL"))
+	}
 
-    token, found := os.LookupEnv("API_TOKEN")
-    if !found {
-        log.Fatalln(missingEnv("API_TOKEN"))
-    }
+	token, found := os.LookupEnv("API_TOKEN")
+	if !found {
+		log.Fatalln(missingEnv("API_TOKEN"))
+	}
 
-    return AuthConfig{
-        Key: key,
-        Email: email,
-        Token: token,
-    }
+	return AuthConfig{
+		Key:   key,
+		Email: email,
+		Token: token,
+	}
 }
 
-func getDnsConfig() DnsConfig {
-    zoneId, found := os.LookupEnv("ZONE_ID")
+func getDomains() []string {
+    domains, found := os.LookupEnv("DOMAINS")
     if !found {
-        log.Fatalln(missingEnv("ZONE_ID"))
+        log.Fatalln(missingEnv("DOMAINS"))
     }
-
-    dnsRecordId, found := os.LookupEnv("DNS_RECORD_ID")
-    if !found {
-        log.Fatalln(missingEnv("DNS_RECORD_ID"))
-    }
-
-    return DnsConfig{
-        ZoneId: zoneId,
-        DNSRecordId: dnsRecordId,
-    }
+    return strings.Split(domains, ",")
 }
-
 
 func LoadConfig() Config {
-    err := godotenv.Load()
-    if err != nil {
-        log.Fatalf("Failed to parse .env file: %s\n", err.Error())
-    }
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatalf("Failed to parse .env file: %s\n", err.Error())
+	}
 
-
-    authConfig := getAuthConfig()
-    dnsConfig := getDnsConfig()
-
-    return Config{
-        Auth: authConfig,
-        DNS: dnsConfig,
-    }
+	return Config{
+		Auth:    getAuthConfig(),
+		Domains: getDomains(),
+	}
 }

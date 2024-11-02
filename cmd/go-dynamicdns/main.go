@@ -1,25 +1,38 @@
 package main
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
+
+	"github.com/Maxxxxxx-x/go-dynamicdns/config"
+	"github.com/cloudflare/cloudflare-go"
 )
 
 const IP_LOG_PATH = "./previous-ips.log"
 
 func main() {
+	config := config.LoadConfig()
 	ensureIPLogFileExists()
 	prevIp := getPreviousIp()
 	currentIp := getCurrentIp()
 	if prevIp == currentIp {
 		return
 	}
-	updateCloudflareDNS(currentIp)
+	saveCurrentIp(currentIp)
+
+	api, err := cloudflare.NewWithAPIToken(config.Auth.Token)
+	if err != nil {
+		log.Fatalf("Failed to connect to cloudflare: %s\n", err.Error())
+	}
+	updateCloudflareDNS(config, api, currentIp)
 }
 
 func ensureIPLogFileExists() {
@@ -66,6 +79,51 @@ func getCurrentIp() string {
 	return strings.Split(rawIp, "=")[1]
 }
 
-func updateCloudflareDNS(ipAddr string) {
+func getZoneId(api *cloudflare.API, domain string) (*cloudflare.ResourceContainer, error) {
+    splitted := strings.Split(domain, ".")
+    if len(splitted) < 2 {
+        return  nil, fmt.Errorf("%s did not contian a valid TLD", domain)
+    }
+    zoneName := strings.Join(splitted[len(splitted)-2:], ".")
+    zoneId, err := api.ZoneIDByName(zoneName)
+    if err != nil {
+        return nil, fmt.Errorf("Failed to get ZoneID from %s\n", zoneName)
+    }
+    return cloudflare.ZoneIdentifier(zoneId), nil
+}
 
+
+func getAllDNSRecord(ctx context.Context, api *cloudflare.API, zoneIdent *cloudflare.ResourceContainer, domain string) ([]cloudflare.DNSRecord , error) {
+    dnsRecords, _, err := api.ListDNSRecords(ctx, zoneIdent, cloudflare.ListDNSRecordsParams{
+        Type: "A",
+    })
+    if err != nil {
+        return nil, fmt.Errorf("Cannot locate DNS record for %s in Zone %s\n", domain, zoneIdent.Identifier)
+    }
+    return dnsRecords, nil
+}
+
+
+func updateCloudflareDNS(config config.Config, api *cloudflare.API, ipAddr string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+    zoneId, err := getZoneId(api, config.Domains[0])
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    dnsRecords, err := getAllDNSRecord(ctx, api, zoneId, config.Domains[0])
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    for _, record := range dnsRecords {
+        _, err := api.UpdateDNSRecord(ctx, zoneId, cloudflare.UpdateDNSRecordParams{
+            ID: record.ID,
+            Name: record.Name,
+            Type: "A",
+            Content: ipAddr,
+        })
+        log.Fatalf("Erorr occured while updating DNS record for %s: %s\n", record.Name, err.Error())
+    }
 }
