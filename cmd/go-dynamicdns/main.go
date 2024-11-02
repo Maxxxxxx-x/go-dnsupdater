@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"time"
 
@@ -124,8 +125,12 @@ func updateCloudflareDNS(config config.Config, api *cloudflare.API, ipAddr strin
 	}
 
 	for _, record := range dnsRecords {
+        if !slices.Contains(config.Domains, record.Name) {
+            log.Printf("Skipping %s. [Not included in config]\n", record.Name)
+            continue
+        }
         if record.Content == ipAddr {
-            log.Printf("No changes required for %s [IP unchanged]\n", record.Name)
+            log.Printf("Skipping %s. [IP unchanged]\n", record.Name)
             continue
         }
         log.Printf("Updating IP Address for %s [From %s to %s]\n", record.Name, record.Content, ipAddr)
