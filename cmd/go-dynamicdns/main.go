@@ -24,6 +24,7 @@ func main() {
 	prevIp := getPreviousIp()
 	currentIp := getCurrentIp()
 	if prevIp == currentIp {
+        log.Printf("Current IP is the same as ireviously stored IP. Aborting...")
 		return
 	}
 	saveCurrentIp(currentIp)
@@ -63,6 +64,7 @@ func saveCurrentIp(ipAddr string) {
 	defer file.Close()
 	file.WriteString(ipAddr)
 	file.Sync()
+    log.Printf("Wrote current IP %s to %s\n", ipAddr, IP_LOG_PATH)
 }
 
 func getCurrentIp() string {
@@ -80,50 +82,55 @@ func getCurrentIp() string {
 }
 
 func getZoneId(api *cloudflare.API, domain string) (*cloudflare.ResourceContainer, error) {
-    splitted := strings.Split(domain, ".")
-    if len(splitted) < 2 {
-        return  nil, fmt.Errorf("%s did not contian a valid TLD", domain)
-    }
-    zoneName := strings.Join(splitted[len(splitted)-2:], ".")
-    zoneId, err := api.ZoneIDByName(zoneName)
-    if err != nil {
-        return nil, fmt.Errorf("Failed to get ZoneID from %s\n", zoneName)
-    }
-    return cloudflare.ZoneIdentifier(zoneId), nil
+	splitted := strings.Split(domain, ".")
+	if len(splitted) < 2 {
+		return nil, fmt.Errorf("%s did not contian a valid TLD", domain)
+	}
+	zoneName := strings.Join(splitted[len(splitted)-2:], ".")
+	zoneId, err := api.ZoneIDByName(zoneName)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to get ZoneID from %s\n", zoneName)
+	}
+	return cloudflare.ZoneIdentifier(zoneId), nil
 }
 
-
-func getAllDNSRecord(ctx context.Context, api *cloudflare.API, zoneIdent *cloudflare.ResourceContainer, domain string) ([]cloudflare.DNSRecord , error) {
-    dnsRecords, _, err := api.ListDNSRecords(ctx, zoneIdent, cloudflare.ListDNSRecordsParams{
-        Type: "A",
-    })
-    if err != nil {
-        return nil, fmt.Errorf("Cannot locate DNS record for %s in Zone %s\n", domain, zoneIdent.Identifier)
-    }
-    return dnsRecords, nil
+func getAllDNSRecord(ctx context.Context, api *cloudflare.API, zoneIdent *cloudflare.ResourceContainer, domain string) ([]cloudflare.DNSRecord, error) {
+	dnsRecords, _, err := api.ListDNSRecords(ctx, zoneIdent, cloudflare.ListDNSRecordsParams{
+		Type: "A",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("Cannot locate DNS record for %s in Zone %s\n", domain, zoneIdent.Identifier)
+	}
+	return dnsRecords, nil
 }
-
 
 func updateCloudflareDNS(config config.Config, api *cloudflare.API, ipAddr string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-    zoneId, err := getZoneId(api, config.Domains[0])
-    if err != nil {
-        log.Fatal(err)
-    }
+	zoneId, err := getZoneId(api, config.Domains[0])
+	if err != nil {
+		log.Fatal(err)
+	}
 
-    dnsRecords, err := getAllDNSRecord(ctx, api, zoneId, config.Domains[0])
-    if err != nil {
-        log.Fatal(err)
-    }
+	dnsRecords, err := getAllDNSRecord(ctx, api, zoneId, config.Domains[0])
+	if err != nil {
+		log.Fatal(err)
+	}
 
-    for _, record := range dnsRecords {
-        _, err := api.UpdateDNSRecord(ctx, zoneId, cloudflare.UpdateDNSRecordParams{
-            ID: record.ID,
-            Name: record.Name,
-            Type: "A",
-            Content: ipAddr,
-        })
-        log.Fatalf("Erorr occured while updating DNS record for %s: %s\n", record.Name, err.Error())
-    }
+	for _, record := range dnsRecords {
+        if record.Content == ipAddr {
+            log.Printf("No changes required for %s [IP unchanged]\n", record.Name)
+            continue
+        }
+        log.Printf("Updating IP Address for %s [From %s to %s]\n", record.Name, record.Content, ipAddr)
+		_, err := api.UpdateDNSRecord(ctx, zoneId, cloudflare.UpdateDNSRecordParams{
+			ID:      record.ID,
+			Name:    record.Name,
+			Type:    "A",
+			Content: ipAddr,
+		})
+		if err != nil {
+			log.Fatalf("Erorr occured while updating DNS record for %s: %s\n", record.Name, err.Error())
+		}
+	}
 }
