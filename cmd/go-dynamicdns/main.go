@@ -57,13 +57,19 @@ func getPreviousIp() string {
 }
 
 func saveCurrentIp(ipAddr string) {
-	file, err := os.OpenFile(IP_LOG_PATH, os.O_APPEND, os.ModeAppend)
+	file, err := os.OpenFile(IP_LOG_PATH, os.O_APPEND|os.O_WRONLY, os.ModeAppend)
+    defer file.Close()
 	if err != nil {
 		log.Fatalf("Failed to open file %s: %s\n", IP_LOG_PATH, err.Error())
 	}
-	defer file.Close()
-	file.WriteString(ipAddr)
-	file.Sync()
+
+    _, err = file.WriteString(ipAddr)
+    if err != nil {
+        log.Fatalf("Failed to write IP to %s: %s\n", IP_LOG_PATH, err.Error())
+    }
+
+    file.Sync()
+
     log.Printf("Wrote current IP %s to %s\n", ipAddr, IP_LOG_PATH)
 }
 
